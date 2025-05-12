@@ -1,76 +1,92 @@
 import numpy as np
+import math
 import torch
 
 class Node:
-    def __init__(self, state, parent=None, prior=0):
-        self.state = state
+    def __init__(self, parent, prior):
         self.parent = parent
-        self.children = {}
-        self.visits = 0
-        self.value = 0
+        self.children = {}  # action -> Node
         self.prior = prior
+        self.visit_count = 0
+        self.value_sum = 0
 
     def expanded(self):
         return len(self.children) > 0
 
-    def best_child(self, c_puct=1.0):
+    def value(self):
+        if self.visit_count == 0:
+            return 0
+        return self.value_sum / self.visit_count
+
+    def select_child(self, c_puct=1.0):
         best_score = -float('inf')
+        best_action = -1
         best_child = None
+
         for action, child in self.children.items():
-            ucb = child.value / (1 + child.visits) + c_puct * child.prior * np.sqrt(self.visits) / (1 + child.visits)
+            ucb = child.value() + c_puct * child.prior * math.sqrt(self.visit_count) / (1 + child.visit_count)
             if ucb > best_score:
                 best_score = ucb
-                best_child = (action, child)
-        return best_child
+                best_action = action
+                best_child = child
 
-def MCTS(state, net, simulations=50):
-    root = Node(state)
+        return best_action, best_child
 
-    # CORRECTED LINE HERE:
-    policy, _ = net(torch.tensor(state.squeeze(0)).float())
-    policy = policy.detach().numpy().flatten()
+def run_mcts(env, net, simulations=50):
+    root = Node(parent=None, prior=1.0)
+    state = env.get_state()
+    policy, _ = net(torch.tensor(state).unsqueeze(0))
+    policy = policy.exp().squeeze(0).detach().numpy()
 
-    for action, p in enumerate(policy):
-        root.children[action] = Node(state=None, parent=root, prior=p)
+    valid_moves = env.available_actions()
+    policy = np.array([policy[a] if a in valid_moves else 0 for a in range(7)])
+    policy_sum = np.sum(policy)
+    if policy_sum > 0:
+        policy /= policy_sum
+    else:
+        policy = np.array([1/len(valid_moves) if a in valid_moves else 0 for a in range(7)])
 
+    for action in valid_moves:
+        root.children[action] = Node(parent=root, prior=policy[action])
 
     for _ in range(simulations):
         node = root
-        path = [node]
+        sim_env = env.clone()
 
-        # Selection
+        search_path = [node]
+
         while node.expanded():
-            action, node = node.best_child()
-            path.append(node)
+            action, node = node.select_child()
+            _, _, done = sim_env.step(action)
+            search_path.append(node)
+            if done:
+                break
 
-        # Expansion
-        if node.visits == 0:
-            state = node.parent.state.copy()
-            game = Connect4()
-            game.board = state
-            game.current_player = 1
-            game.make_move(action)
+        if not done:
+            state = sim_env.get_state()
+            policy, value = net(torch.tensor(state).unsqueeze(0))
+            policy = policy.exp().squeeze(0).detach().numpy()
 
-            if game.check_win():
-                value = 1  # Win condition
-            elif len(game.available_moves()) == 0:
-                value = 0  # Draw condition
+            valid_moves = sim_env.available_actions()
+            policy = np.array([policy[a] if a in valid_moves else 0 for a in range(7)])
+            policy_sum = np.sum(policy)
+            if policy_sum > 0:
+                policy /= policy_sum
             else:
-                next_state = game.board.copy()
-                node.state = next_state
-                _, value = net(torch.tensor(next_state).unsqueeze(0).float())
-                value = value.item()
+                policy = np.array([1/len(valid_moves) if a in valid_moves else 0 for a in range(7)])
+
+            node.children = {a: Node(parent=node, prior=policy[a]) for a in valid_moves}
         else:
-            value = 0
+            value = 0  # draw or terminal state
 
-        # Backpropagation
-        for n in reversed(path):
-            n.visits += 1
-            n.value += value
+        for node in reversed(search_path):
+            node.visit_count += 1
+            node.value_sum += value
+            value = -value
 
-    action_probs = np.zeros(7)
-    for action, child in root.children.items():
-        action_probs[action] = child.visits
-
-    action_probs /= np.sum(action_probs)
+    visit_counts = np.array([root.children[a].visit_count if a in root.children else 0 for a in range(7)])
+    if np.sum(visit_counts) == 0:
+        action_probs = np.array([1/7] * 7)
+    else:
+        action_probs = visit_counts / np.sum(visit_counts)
     return action_probs
