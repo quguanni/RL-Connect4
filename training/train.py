@@ -44,10 +44,17 @@ def self_play_episode(env, net, simulations=50):
 
 def train():
     net = AlphaZeroNet()
+
+    # ✅ Load from checkpoint if it exists
+    if os.path.exists("checkpoint_1000.pt"):
+        print("Loading checkpoint_1000.pt...")
+        net.load_state_dict(torch.load("checkpoint_1000.pt"))
+
     optimizer = optim.Adam(net.parameters(), lr=1e-3)
     buffer = ReplayBuffer(capacity=10000)
 
-    for episode in range(1, 20001):
+
+    for episode in range(1001, 20001):
         env = Connect4()
         episode_data = self_play_episode(env, net)
         for data in episode_data:
