@@ -1,28 +1,36 @@
 import numpy as np
 
 class Connect4:
-    def __init__(self):
-        self.rows, self.cols = 6, 7
-        self.reset()
+    def __init__(self): # Initialize the Connect4 environment
+        self.rows, self.cols = 6, 7 # Number of rows and columns
+        self.reset() # Reset the environment to its initial state
 
-    def reset(self):
-        self.board = np.zeros((self.rows, self.cols), dtype=int)
+    def reset(self): # Reset the environment to its initial state
+        self.board = np.zeros((self.rows, self.cols), dtype=int) 
         self.current_player = 1
         return self.get_state()
 
-    def clone(self):
-        clone = Connect4()
+    def clone(self): # Create a deep copy of the environment after each move
+        # This is a deep copy of the board and current player
+        # Create a new instance of the Connect4 class
+        clone = Connect4() 
+        # Copy the current board state to the new instance
         clone.board = self.board.copy()
+        # Copy the current player to the new instance
         clone.current_player = self.current_player
+        # Return the cloned instance
         return clone
 
     def available_actions(self):
+        # Return a list of columns (actions) that are not full
         return [c for c in range(self.cols) if self.board[0, c] == 0]
 
     def step(self, action):
+        # Check if the selected column is full; if so, raise an error
         if self.board[0, action] != 0:
             raise ValueError("Invalid action: column is full")
 
+        # Drop the piece into the selected column at the lowest available row
         for row in reversed(range(self.rows)):
             if self.board[row, action] == 0:
                 self.board[row, action] = self.current_player

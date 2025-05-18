@@ -1,5 +1,6 @@
-torch
-numpy
+torch>=1.7.0
+numpy>=1.19.2
 matplotlib
 jupyter
 sympy
+pygame>=2.0.0
